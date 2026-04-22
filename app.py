@@ -85,7 +85,7 @@ _TEMPLATE_SIGNATURES: dict = {
     "Shopee":  lambda sheets: any(s.strip().lower() == "modelo" for s in sheets),
     "Temu":    lambda sheets: any(s.strip().lower() == "template" for s in sheets),
     "Vendor":  lambda sheets: any(s.strip().lower().startswith("modelo-") for s in sheets),
-    "Walmart":  lambda sheets: any(s.strip().lower().startswith("Product Content And Site Exp","Trade Item Configurations") for s in sheets),
+    "Walmart": lambda sheets: any(s.strip().lower() == "Product Content And Site Exp" for s in sheets),
 }
 
 
