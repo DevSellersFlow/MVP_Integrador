@@ -83,6 +83,11 @@ MARKETPLACE_CONFIG: dict[str, dict] = {
         "data_start": 7,
       },
     },
+    "Walmart": {
+        "sheet": "Product Content And Site Exp",
+        "header_row": 4,
+        "data_start": 7,
+    },
     "Amazon": {
         # Amazon como DESTINO: recebe dados de outros marketplaces.
         # Origens em kg/cm → Amazon espera lb/in.
