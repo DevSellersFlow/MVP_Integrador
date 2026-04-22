@@ -16,6 +16,9 @@ MUDANÇAS:
   - Colunas destino com nome IDÊNTICO repetido (ex: 5x "Tópico" no Vendor)
     são tratadas corretamente: cada ocorrência consome a próxima posição
     do grupo multi-coluna, em ordem de col_idx.
+  - SOURCE_MAPPINGS completo para Amazon, Mercado Livre, Shopee, Temu, Vendor,
+    Magalu — normalize_source_df() cobre todos os marketplaces como origem.
+  - MARKETPLACE_MAPPINGS inclui "Amazon" como destino.
 """
 
 from __future__ import annotations
@@ -38,47 +41,55 @@ logger = logging.getLogger(__name__)
 SIMILARITY_THRESHOLD = 0.72
 
 AMAZON_SYNONYMS: dict[str, list[str]] = {
-    "sku": ["sku", "seller sku", "sellers sku", "sku do vendedor"],
-    "nome_produto": ["item name", "nome do produto", "product name", "título", "titulo"],
+    "sku": ["sku", "seller sku", "sellers sku", "sku do vendedor", "sku principal",
+            "sku do fornecedor", "contribution goods", "contribution sku"],
+    "nome_produto": ["item name", "nome do produto", "product name", "título", "titulo",
+                     "titulo_produto", "product title"],
     "marca": ["brand name", "nome da marca", "marca", "brand"],
     "descricao": [
         "product description", "descrição do produto", "description",
-        "descrição", "descricao",
+        "descrição", "descricao", "descricao_item",
     ],
-    "quantidade": ["Quantity (US)", "quantidade (br)", "estoque", "stock", "qtd"],
+    "quantidade": ["quantity (us)", "quantidade (br)", "estoque", "stock", "qtd", "quantidade"],
     "preco": [
         "your price usd (sell on amazon, us)", "preço", "preco", "price",
-        "preço de venda", "Preço padrão BRL (Vender na Amazon, BR)", "Preço sugerido com impostos",
+        "preço de venda", "preço padrão brl (vender na amazon, br)",
+        "preço sugerido com impostos", "base price - usd", "preço [r$]",
     ],
-    # bullet_point é tratado como grupo multi-coluna
-    "bullet_point": ["Bullet Point", "tópico", "topico", "key feature"],
-    "peso_pacote": ["package weight", "peso do pacote", "peso"],
-    "unidade_peso": ["Package Weight Unit", "Unidade de peso do pacote"],
+    "bullet_point": ["bullet point", "tópico", "topico", "key feature"],
+    "peso_pacote": ["package weight", "peso do pacote", "peso", "weight - lb",
+                    "peso físico (kg)  \nembalagem com o produto dentro.", "peso fisico (kg)"],
+    "unidade_peso": ["package weight unit", "unidade de peso do pacote"],
     "comprimento_pacote": [
         "item package length", "comprimento do pacote", "comprimento",
+        "length - in", "profundidade (cm)",
     ],
-    "unidade_comprimento": ["Package Length Unit", "Unidade de comprimento do pacote"],
-    "largura_pacote": ["item package width", "largura do pacote", "width", "largura"],
-    "unidade_largura": ["Package Width Unit", "Unidade de largura do pacote"],
-    "altura_pacote": ["item package height", "altura do pacote", "height", "altura"],
-    "unidade_altura": ["Package Height Unit", "Unidade de altura do pacote"],
-    "id_produto": ["external product id", "id do produto", "ean", "gtin", "upc", "asin"],
+    "unidade_comprimento": ["package length unit", "unidade de comprimento do pacote"],
+    "largura_pacote": ["item package width", "largura do pacote", "width", "largura",
+                       "width - in", "largura (cm)"],
+    "unidade_largura": ["package width unit", "unidade de largura do pacote"],
+    "altura_pacote": ["item package height", "altura do pacote", "height", "altura",
+                      "height - in", "altura (cm)"],
+    "unidade_altura": ["package height unit", "unidade de altura do pacote"],
+    "id_produto": ["external product id", "id do produto", "ean", "gtin", "upc", "asin",
+                   "gtin (ean)", "codigo universal de produto", "codigo universal"],
     "tipo_id_produto": [
         "external product id type", "tipo de id do produto",
-        "tipo id", "id type",
+        "tipo id", "id type", "external product id type",
     ],
     "ncm": ["código ncm", "ncm", "codigo ncm"],
-    "sabor": ["flavour", "flavor", "sabor", "flavors"],
+    "sabor": ["flavour", "flavor", "sabor", "flavors", "flavours"],
     "cor": ["color", "colour", "cor"],
     "tamanho": ["size", "tamanho"],
     "fabricante": ["manufacturer", "fabricante"],
     "tipo_produto": ["item type keyword", "tipo de produto", "product type"],
     "hierarquia": ["parentage level", "nível de hierarquia", "nivel de hierarquia"],
     "sku_pai": ["parent sku", "sku do produto pai", "sku pai"],
-    "pais_origem": ["country of origin", "país de origem", "pais de origem"],
-    "origem_mercadoria": ["Origem da mercadoria"],
-    "cest": ["Código Especificador da Substituição Tributária (CEST)", "CEST"],
-    "material": ["Material"]
+    "pais_origem": ["country of origin", "país de origem", "pais de origem",
+                    "country/region of origin"],
+    "origem_mercadoria": ["origem da mercadoria", "origem"],
+    "cest": ["código especificador da substituição tributária (cest)", "cest"],
+    "material": ["material"],
 }
 
 MARKETPLACE_MAPPINGS: dict[str, dict[str, list[str]]] = {
@@ -89,21 +100,20 @@ MARKETPLACE_MAPPINGS: dict[str, dict[str, list[str]]] = {
         "descrição do produto": ["descricao"],
         "Preço sugerido com impostos": ["preco"],
         "código ncm": ["ncm"],
-	"Origem da mercadoria": ["origem_mercadoria"],
-	"Código Especificador da Substituição Tributária (CEST)": ["cest"],
+        "Origem da mercadoria": ["origem_mercadoria"],
+        "Código Especificador da Substituição Tributária (CEST)": ["cest"],
         "sabor": ["sabor"],
         "cor": ["cor"],
         "tamanho": ["tamanho"],
-        # "Tópico" — as 5 colunas idênticas no template são tratadas como grupo
         "Tópico": ["bullet_point"],
         "peso do pacote": ["peso_pacote"],
-	"Unidade de peso do pacote": ["unidade_peso"],
+        "Unidade de peso do pacote": ["unidade_peso"],
         "comprimento do pacote": ["comprimento_pacote"],
-	"Unidade de comprimento do pacote": ["unidade_comprimento"],
+        "Unidade de comprimento do pacote": ["unidade_comprimento"],
         "largura do pacote": ["largura_pacote"],
-	"Unidade de largura do pacote": ["unidade_largura"],
+        "Unidade de largura do pacote": ["unidade_largura"],
         "altura do pacote": ["altura_pacote"],
-	"Unidade de altura do pacote": ["unidade_altura"],
+        "Unidade de altura do pacote": ["unidade_altura"],
         "fabricante": ["fabricante"],
         "id externo do produto": ["id_produto"],
         "tipo de id externo do produto": ["tipo_id_produto"],
@@ -111,30 +121,26 @@ MARKETPLACE_MAPPINGS: dict[str, dict[str, list[str]]] = {
         "nível de hierarquia": ["hierarquia"],
         "sku do produto pai": ["sku_pai"],
         "país de origem": ["pais_origem"],
-	"Material": ["material"],
+        "Material": ["material"],
     },
     "Temu": {
-        # Nomes exatos da linha 2 do template temu_template_integrador.xlsx
-        # cols 1-4 "Processing Results" são preenchidas pela Temu — não mapeadas
-        # O SKU do vendedor vai em "Contribution SKU" (col 9, variações)
-        # e "Contribution Goods" (col 8, produto pai / produto simples)
-        "Contribution Goods": ["sku"],        # SKU pai (col 8)
-        "Contribution SKU": ["sku"],          # SKU da variação (col 9)
-        "Product Name": ["nome_produto"],     # col 7
-        "Brand": ["marca"],                   # col 13
-        "Product Description": ["descricao"], # col 15
-        "Bullet Point": ["bullet_point"],     # cols 16-21
-        "Base Price - USD": ["preco"],        # col 108
-        "Flavors": ["sabor"],                 # col 87
-        "Color": ["cor"],                     # col 83
-        "Size": ["tamanho"],                  # col 84
-        "Weight - lb": ["peso_pacote"],       # col 111
-        "Length - in": ["comprimento_pacote"],# col 112
-        "Width - in": ["largura_pacote"],     # col 113
-        "Height - in": ["altura_pacote"],     # col 114
-        "External Product ID Type": ["tipo_id_produto"], # col 115
-        "External Product ID": ["id_produto"],           # col 116
-        "Country/Region of Origin": ["pais_origem"],     # col 121
+        "Contribution Goods": ["sku"],
+        "Contribution SKU": ["sku"],
+        "Product Name": ["nome_produto"],
+        "Brand": ["marca"],
+        "Product Description": ["descricao"],
+        "Bullet Point": ["bullet_point"],
+        "Base Price - USD": ["preco"],
+        "Flavors": ["sabor"],
+        "Color": ["cor"],
+        "Size": ["tamanho"],
+        "Weight - lb": ["peso_pacote"],
+        "Length - in": ["comprimento_pacote"],
+        "Width - in": ["largura_pacote"],
+        "Height - in": ["altura_pacote"],
+        "External Product ID Type": ["tipo_id_produto"],
+        "External Product ID": ["id_produto"],
+        "Country/Region of Origin": ["pais_origem"],
     },
     "Shopee": {
         "sku principal": ["sku"],
@@ -144,46 +150,46 @@ MARKETPLACE_MAPPINGS: dict[str, dict[str, list[str]]] = {
         "estoque": ["quantidade"],
         "gtin (ean)": ["id_produto"],
         "ncm": ["ncm"],
-	"Origem": ["origem_mercadoria"],
-	"CEST": ["cest"],
-	"Peso": ["peso_pacote"],
-	"Comprimento": ["comprimento_pacote"],
-	"Altura": ["altura_pacote"],
-	"Largura": ["largura_pacote"],
+        "Origem": ["origem_mercadoria"],
+        "CEST": ["cest"],
+        "Peso": ["peso_pacote"],
+        "Comprimento": ["comprimento_pacote"],
+        "Altura": ["altura_pacote"],
+        "Largura": ["largura_pacote"],
     },
     "Mercado Livre": {
-        # Coluna de título do ML (nome longo) → nome_produto da Amazon
         "título: informe o produto, marca, modelo e destaque as características principais \ncaso crie variações, você deve criar um título geral para todas": ["nome_produto"],
-        # Aliases curtos para robustez (similaridade / aprendizado)
         "título": ["nome_produto"],
         "codigo universal de produto": ["id_produto"],
         "sku": ["sku"],
         "estoque": ["quantidade"],
-	"Preço [R$]": ["preco"],
-	"Descrição": ["descricao"],
-	"Largura (cm)": ["largura_pacote"],
-	"Altura (cm)": ["altura_pacote"],
-	"Profundidade (cm)": ["comprimento_pacote"],
-	"Peso físico (kg)  \nEmbalagem com o produto dentro.": ["peso_pacote"],
-	"Marca": ["marca"],
+        "Preço [R$]": ["preco"],
+        "Descrição": ["descricao"],
+        "Largura (cm)": ["largura_pacote"],
+        "Altura (cm)": ["altura_pacote"],
+        "Profundidade (cm)": ["comprimento_pacote"],
+        "Peso físico (kg)  \nEmbalagem com o produto dentro.": ["peso_pacote"],
+        "Marca": ["marca"],
     },
     "Amazon": {
-        # Colunas do template Amazon → chaves semânticas
-        # Usado quando Amazon é o marketplace DESTINO
-        # EN
+        # Amazon como DESTINO — colunas EN
         "item name": ["nome_produto"],
         "seller sku": ["sku"],
         "brand name": ["marca"],
         "product description": ["descricao"],
         "bullet point": ["bullet_point"],
         "package weight": ["peso_pacote"],
+        "package weight unit": ["unidade_peso"],
         "item package length": ["comprimento_pacote"],
+        "package length unit": ["unidade_comprimento"],
         "item package width": ["largura_pacote"],
+        "package width unit": ["unidade_largura"],
         "item package height": ["altura_pacote"],
+        "package height unit": ["unidade_altura"],
         "external product id": ["id_produto"],
         "external product id type": ["tipo_id_produto"],
         "country of origin": ["pais_origem"],
-        # PT-BR
+        # Amazon como DESTINO — colunas PT-BR
         "nome do produto": ["nome_produto"],
         "sku do vendedor": ["sku"],
         "nome da marca": ["marca"],
@@ -213,8 +219,6 @@ MARKETPLACE_MAPPINGS: dict[str, dict[str, list[str]]] = {
 }
 
 REQUIRED_FIELDS: dict[str, list[str]] = {
-    # Valores devem bater EXATAMENTE com os cabeçalhos do template
-    # (após .strip().lower()) para que _validate_output os encontre.
     "Shopee": ["SKU Principal", "Nome do Produto", "Preço", "Estoque"],
     "Temu": ["Contribution Goods", "Product Name"],
     "Vendor": ["SKU do fornecedor", "Nome do Produto"],
@@ -230,22 +234,29 @@ REQUIRED_FIELDS: dict[str, list[str]] = {
 
 SOURCE_MAPPINGS: dict[str, dict[str, str]] = {
     "Amazon": {
+        # EN
         "item name": "nome_produto",
         "seller sku": "sku",
         "brand name": "marca",
         "product description": "descricao",
         "bullet point": "bullet_point",
         "package weight": "peso_pacote",
+        "package weight unit": "unidade_peso",
         "item package length": "comprimento_pacote",
+        "package length unit": "unidade_comprimento",
         "item package width": "largura_pacote",
+        "package width unit": "unidade_largura",
         "item package height": "altura_pacote",
+        "package height unit": "unidade_altura",
         "external product id": "id_produto",
         "external product id type": "tipo_id_produto",
         "country of origin": "pais_origem",
+        # PT-BR
         "nome do produto": "nome_produto",
         "sku do vendedor": "sku",
         "nome da marca": "marca",
         "descricao do produto": "descricao",
+        "descricao_do_produto": "descricao",
         "topico": "bullet_point",
         "peso do pacote": "peso_pacote",
         "comprimento do pacote": "comprimento_pacote",
@@ -255,9 +266,13 @@ SOURCE_MAPPINGS: dict[str, dict[str, str]] = {
         "pais de origem": "pais_origem",
         "preco": "preco",
         "estoque": "quantidade",
+        "your price usd (sell on amazon, us)": "preco",
+        "quantity (us)": "quantidade",
     },
     "Mercado Livre": {
         "titulo": "nome_produto",
+        # Variante longa do ML com instrução embutida
+        "título: informe o produto, marca, modelo e destaque as características principais \ncaso crie variações, você deve criar um título geral para todas": "nome_produto",
         "codigo universal de produto": "id_produto",
         "sku": "sku",
         "estoque": "quantidade",
@@ -267,6 +282,7 @@ SOURCE_MAPPINGS: dict[str, dict[str, str]] = {
         "altura (cm)": "altura_pacote",
         "profundidade (cm)": "comprimento_pacote",
         "peso fisico (kg)  \nembalagem com o produto dentro.": "peso_pacote",
+        "peso fisico (kg)": "peso_pacote",
         "marca": "marca",
     },
     "Shopee": {
@@ -277,6 +293,8 @@ SOURCE_MAPPINGS: dict[str, dict[str, str]] = {
         "estoque": "quantidade",
         "gtin (ean)": "id_produto",
         "ncm": "ncm",
+        "origem": "origem_mercadoria",
+        "cest": "cest",
         "peso": "peso_pacote",
         "comprimento": "comprimento_pacote",
         "altura": "altura_pacote",
@@ -308,16 +326,27 @@ SOURCE_MAPPINGS: dict[str, dict[str, str]] = {
         "descricao do produto": "descricao",
         "preco sugerido com impostos": "preco",
         "codigo ncm": "ncm",
+        "origem da mercadoria": "origem_mercadoria",
+        "codigo especificador da substituicao tributaria (cest)": "cest",
         "topico": "bullet_point",
         "peso do pacote": "peso_pacote",
+        "unidade de peso do pacote": "unidade_peso",
         "comprimento do pacote": "comprimento_pacote",
+        "unidade de comprimento do pacote": "unidade_comprimento",
         "largura do pacote": "largura_pacote",
+        "unidade de largura do pacote": "unidade_largura",
         "altura do pacote": "altura_pacote",
+        "unidade de altura do pacote": "unidade_altura",
         "id externo do produto": "id_produto",
+        "tipo de id externo do produto": "tipo_id_produto",
+        "tipo de produto": "tipo_produto",
+        "nivel de hierarquia": "hierarquia",
+        "sku do produto pai": "sku_pai",
         "pais de origem": "pais_origem",
         "fabricante": "fabricante",
         "cor": "cor",
         "tamanho": "tamanho",
+        "material": "material",
     },
     "Magalu": {
         "sku": "sku",
@@ -334,10 +363,10 @@ SOURCE_MAPPINGS: dict[str, dict[str, str]] = {
 }
 
 # Prefixos normalizados de grupos multi-coluna.
-# O AmazonSheetReader sanitiza duplicatas como "Bullet Point", "Bullet Point_1"...
-# Este mapper detecta as variantes: com espaço+N, com _N, ou sem sufixo (primeiro).
 MULTI_COLUMN_GROUPS: dict[str, list[str]] = {
-    "bullet_point": ["bullet point", "topico", "key feature"],
+    # "bullet_point" (underscore) é a chave semântica gerada por normalize_source_df.
+    # Os outros prefixos cobrem os nomes nativos dos templates.
+    "bullet_point": ["bullet_point", "bullet point", "topico", "key feature"],
 }
 
 
@@ -402,11 +431,9 @@ def _col_number(col_name: str) -> int:
             'Bullet Point_1'→2 (sanitize _0-based → +1),
             'Bullet Point2'→2
     """
-    # Underscore variant do sanitizer: _N é 0-based, então ordinal = N+1
     m = re.search(r"_(\d+)$", col_name.strip())
     if m:
-        return int(m.group(1)) + 2  # _0→ord 2, _1→ord 3 ... (sem suffix→ord 1)
-    # Espaço+número ou número colado
+        return int(m.group(1)) + 2
     m2 = re.search(r"\s*(\d+)\s*$", col_name.strip())
     return int(m2.group(1)) if m2 else 1
 
@@ -416,9 +443,7 @@ def _base_name(col_name: str) -> str:
     Remove sufixo numérico (com espaço, colado ou underscore):
     'Bullet Point 3'→'Bullet Point', 'Bullet Point_2'→'Bullet Point'
     """
-    # Remove _N (sanitizer)
     s = re.sub(r"_\d+$", "", col_name.strip()).strip()
-    # Remove espaço+número ou número colado
     s = re.sub(r"\s*\d+\s*$", "", s).strip()
     return s
 
@@ -436,7 +461,8 @@ def _matches_group_prefix(col_norm: str, prefix: str) -> bool:
 
 class ColumnMapper:
     """
-    Mapeia colunas destino (marketplace) → colunas origem (Amazon).
+    Mapeia colunas destino (marketplace) → colunas origem (semânticas ou Amazon).
+    Suporta qualquer marketplace tanto como origem quanto como destino.
     """
 
     def __init__(self, db_path: Optional[Path] = None):
@@ -461,7 +487,7 @@ class ColumnMapper:
 
         used_source_indices: set[int] = set()
 
-        # Pré-computa grupos multi-coluna da Amazon
+        # Pré-computa grupos multi-coluna da origem
         multi_groups = self._collect_multi_groups(amazon_cols)
         multi_group_cursor: dict[str, int] = {k: 0 for k in multi_groups}
 
@@ -501,25 +527,30 @@ class ColumnMapper:
         self, df: pd.DataFrame, source_marketplace: str
     ) -> pd.DataFrame:
         """
-        Renomeia colunas do DataFrame de origem para chaves semanticas.
+        Renomeia colunas do DataFrame de origem para chaves semânticas.
         Recebe DataFrame com colunas nativas do marketplace e retorna
-        DataFrame com colunas no vocabulario semantico (nome_produto, sku...).
-        Colunas nao reconhecidas sao mantidas com nome original.
+        DataFrame com colunas no vocabulário semântico (nome_produto, sku...).
+        Colunas não reconhecidas são mantidas com nome original.
         """
         mapping = SOURCE_MAPPINGS.get(source_marketplace, {})
         if not mapping:
             logger.warning(
-                "SOURCE_MAPPINGS nao tem entrada para '%s'. Colunas mantidas.",
+                "SOURCE_MAPPINGS não tem entrada para '%s'. Colunas mantidas.",
                 source_marketplace,
             )
             return df.copy()
+
+        # Pré-normaliza as chaves: SOURCE_MAPPINGS tem chaves com acentos
+        # ("título: informe...", "preço"...) mas col_norm é sem acentos.
+        # mapping.get(col_norm) nunca bateria sem esta normalização prévia.
+        norm_mapping: dict[str, str] = {_normalize(k): v for k, v in mapping.items()}
 
         rename_map: dict[str, str] = {}
         used_semantic: set[str] = set()
 
         for col in df.columns:
             col_norm = _normalize(col)
-            semantic = mapping.get(col_norm)
+            semantic = norm_mapping.get(col_norm)
             if semantic and semantic not in used_semantic:
                 rename_map[col] = semantic
                 used_semantic.add(semantic)
@@ -543,7 +574,7 @@ class ColumnMapper:
         self, amazon_cols: list[str]
     ) -> dict[str, list[tuple[str, int]]]:
         """
-        Detecta e agrupa colunas multi-coluna na Amazon.
+        Detecta e agrupa colunas multi-coluna na origem.
         Suporta:
           - 'Bullet Point'           → ordinal 1
           - 'Bullet Point 2'         → ordinal 2
@@ -610,7 +641,6 @@ class ColumnMapper:
             fixed_norm = _normalize(fixed_dest)
             dest_base_norm = _normalize(_base_name(dest_col))
 
-            # Bate se: exato OU variante numerada/sanitizada do mesmo prefixo
             is_exact = fixed_norm == dest_norm
             is_variant = dest_base_norm == fixed_norm and dest_norm != fixed_norm
 
@@ -643,7 +673,7 @@ class ColumnMapper:
 
                 synonyms = [_normalize(s) for s in AMAZON_SYNONYMS.get(key, [key])]
                 # Inclui a própria chave semântica — quando a origem já foi
-                # normalizada (ex: Vendor → Amazon), as colunas têm nomes
+                # normalizada (ex: ML → Amazon), as colunas têm nomes
                 # como "nome_produto", "sku" que batem diretamente com a chave.
                 if _normalize(key) not in synonyms:
                     synonyms.append(_normalize(key))
@@ -714,7 +744,7 @@ class ColumnMapper:
         """
         Persiste learned.json com escrita atômica (write-then-replace).
         Evita corrupção do arquivo em caso de escrita simultânea ou crash
-        no meio do processo — o os.replace() é uma operação atômica no SO.
+        no meio do processo — os.replace() é uma operação atômica no SO.
         """
         if self._db_path is None:
             return

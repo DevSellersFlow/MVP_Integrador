@@ -7,7 +7,8 @@ Endpoints:
   POST /process          — pipeline completo (upload + processamento)
   GET  /download/{job}   — download do arquivo gerado
   GET  /status/{job}     — status e resultado de um job
-  GET  /marketplaces     — lista os marketplaces disponíveis
+  GET  /marketplaces     — lista os marketplaces disponíveis (destino)
+  GET  /source-marketplaces — lista os marketplaces disponíveis como origem
   POST /learn            — salva mapeamento aprendido
   GET  /mappings         — lista mapeamentos aprendidos
 
@@ -40,23 +41,26 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
-# Garante imports do projeto
 import sys
 sys.path.insert(0, str(Path(__file__).parent))
 
 from pipeline import SellersFlowPipeline, DEFAULT_DB_PATH
 from core.mapper import MARKETPLACE_MAPPINGS
+from core.source_reader import SOURCE_CONFIG
 
 # ─── Configuração ─────────────────────────────────────────────────────────────
 
 logger = logging.getLogger(__name__)
 
-# Diretório raiz para outputs por job
 JOBS_DIR = Path(__file__).parent / "data" / "jobs"
 JOBS_DIR.mkdir(parents=True, exist_ok=True)
 
-# Tempo de retenção dos arquivos gerados
 JOB_TTL_HOURS = 2
+
+# Marketplaces válidos como ORIGEM (inclui Amazon que usa reader.py dedicado)
+SOURCE_MARKETPLACES: list[str] = ["Amazon"] + [
+    mp for mp in SOURCE_CONFIG.keys() if mp != "Amazon"
+]
 
 # ─── Estado em memória (jobs) ─────────────────────────────────────────────────
 
@@ -69,12 +73,12 @@ _jobs_lock = asyncio.Lock()
 app = FastAPI(
     title="SellersFlow API",
     description="Motor inteligente de transformação de catálogos multi-marketplace.",
-    version="1.0.0",
+    version="2.0.0",
 )
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],   # Em produção: restringir para domínio do front
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -86,6 +90,7 @@ class JobStatus(BaseModel):
     job_id: str
     status: str                        # "pending" | "running" | "done" | "error"
     marketplace: str
+    source_marketplace: str
     created_at: str
     elapsed_seconds: Optional[float] = None
     rows_written: Optional[int] = None
@@ -145,6 +150,7 @@ def _build_job_status(job_id: str, job: dict) -> JobStatus:
         job_id=job_id,
         status=job["status"],
         marketplace=job["marketplace"],
+        source_marketplace=job.get("source_marketplace", "Amazon"),
         created_at=job["created_at"],
         elapsed_seconds=result.elapsed_seconds if result else None,
         rows_written=(
@@ -175,6 +181,7 @@ async def _run_pipeline(
     amazon_bytes: bytes,
     template_bytes: bytes,
     marketplace: str,
+    source_marketplace: str,
     use_ai: bool,
     enrich_ai: bool,
 ) -> None:
@@ -192,6 +199,7 @@ async def _run_pipeline(
             amazon_file=io.BytesIO(amazon_bytes),
             template_file=io.BytesIO(template_bytes),
             marketplace=marketplace,
+            source_marketplace=source_marketplace,
             use_ai=use_ai,
             enrich_ai=enrich_ai,
         )
@@ -233,8 +241,14 @@ def _cleanup_old_jobs() -> None:
 
 @app.get("/marketplaces", response_model=MarketplacesResponse, tags=["Config"])
 async def list_marketplaces():
-    """Retorna a lista de marketplaces configurados."""
+    """Retorna a lista de marketplaces configurados como DESTINO."""
     return MarketplacesResponse(marketplaces=list(MARKETPLACE_MAPPINGS.keys()))
+
+
+@app.get("/source-marketplaces", response_model=MarketplacesResponse, tags=["Config"])
+async def list_source_marketplaces():
+    """Retorna a lista de marketplaces suportados como ORIGEM."""
+    return MarketplacesResponse(marketplaces=SOURCE_MARKETPLACES)
 
 
 @app.get("/mappings", response_model=MappingsResponse, tags=["Aprendizado"])
@@ -265,9 +279,10 @@ async def learn_mapping(req: LearnRequest):
 @app.post("/process", response_model=JobStatus, status_code=202, tags=["Pipeline"])
 async def process(
     background_tasks: BackgroundTasks,
-    amazon_file: UploadFile = File(..., description="Planilha Amazon (.xlsx/.xlsm)"),
-    template_file: UploadFile = File(..., description="Template do marketplace (.xlsx/.xlsm)"),
-    marketplace: str = Form(..., description="Nome do marketplace (ex: Shopee, Mercado Livre)"),
+    source_file: UploadFile = File(..., description="Planilha de ORIGEM (.xlsx/.xlsm)"),
+    template_file: UploadFile = File(..., description="Template do marketplace DESTINO (.xlsx/.xlsm)"),
+    marketplace: str = Form(..., description="Marketplace DESTINO (ex: Shopee, Amazon, Mercado Livre)"),
+    source_marketplace: str = Form("Amazon", description="Marketplace ORIGEM (ex: Amazon, Mercado Livre, Shopee)"),
     use_ai: bool = Form(False, description="Usar IA como fallback de mapeamento"),
     enrich_ai: bool = Form(False, description="Enriquecer título/descrição via IA"),
 ):
@@ -275,10 +290,16 @@ async def process(
     Inicia o processamento em background.
     Retorna imediatamente com job_id e status 202 Accepted.
     Consulte GET /status/{job_id} para acompanhar.
+
+    Suporta qualquer combinação de marketplace origem/destino:
+      - Amazon → Shopee
+      - Mercado Livre → Amazon
+      - Shopee → Temu
+      - etc.
     """
     # ── Validações básicas ────────────────────────────────────────────────
     allowed_ext = {".xlsx", ".xlsm", ".xls"}
-    for upload in (amazon_file, template_file):
+    for upload in (source_file, template_file):
         ext = Path(upload.filename or "").suffix.lower()
         if ext not in allowed_ext:
             raise HTTPException(
@@ -289,27 +310,45 @@ async def process(
     if marketplace not in MARKETPLACE_MAPPINGS:
         raise HTTPException(
             status_code=400,
-            detail=f"Marketplace '{marketplace}' não suportado. "
-                   f"Disponíveis: {list(MARKETPLACE_MAPPINGS.keys())}",
+            detail=(
+                f"Marketplace destino '{marketplace}' não suportado. "
+                f"Disponíveis: {list(MARKETPLACE_MAPPINGS.keys())}"
+            ),
+        )
+
+    if source_marketplace not in SOURCE_MARKETPLACES:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Marketplace origem '{source_marketplace}' não suportado. "
+                f"Disponíveis: {SOURCE_MARKETPLACES}"
+            ),
+        )
+
+    if marketplace == source_marketplace:
+        raise HTTPException(
+            status_code=400,
+            detail="Marketplace de origem e destino não podem ser iguais.",
         )
 
     MAX_SIZE = 20 * 1024 * 1024  # 20 MB
-    amazon_bytes = await amazon_file.read()
+    amazon_bytes = await source_file.read()
     template_bytes = await template_file.read()
 
     if len(amazon_bytes) > MAX_SIZE:
-        raise HTTPException(status_code=413, detail="Planilha Amazon excede 20 MB.")
+        raise HTTPException(status_code=413, detail="Planilha de origem excede 20 MB.")
     if len(template_bytes) > MAX_SIZE:
         raise HTTPException(status_code=413, detail="Template excede 20 MB.")
 
     # ── Criar job ─────────────────────────────────────────────────────────
-    _cleanup_old_jobs()   # aproveita a requisição para limpar jobs antigos
+    _cleanup_old_jobs()
 
     job_id = str(uuid.uuid4())
     async with _jobs_lock:
         _jobs[job_id] = {
             "status": "pending",
             "marketplace": marketplace,
+            "source_marketplace": source_marketplace,
             "created_at": datetime.utcnow().isoformat(),
             "result": None,
             "errors": [],
@@ -321,11 +360,15 @@ async def process(
         amazon_bytes=amazon_bytes,
         template_bytes=template_bytes,
         marketplace=marketplace,
+        source_marketplace=source_marketplace,
         use_ai=use_ai,
         enrich_ai=enrich_ai,
     )
 
-    logger.info("Job %s criado para marketplace=%s", job_id, marketplace)
+    logger.info(
+        "Job %s criado: %s → %s",
+        job_id, source_marketplace, marketplace,
+    )
     return _build_job_status(job_id, _jobs[job_id])
 
 
@@ -377,6 +420,9 @@ async def health():
     """Verifica se a API está no ar."""
     return {
         "status": "ok",
+        "version": "2.0.0",
         "jobs_active": len(_jobs),
+        "source_marketplaces": SOURCE_MARKETPLACES,
+        "dest_marketplaces": list(MARKETPLACE_MAPPINGS.keys()),
         "timestamp": datetime.utcnow().isoformat(),
     }

@@ -1,10 +1,10 @@
 """
 source_reader.py
 ================
-Leitura genérica de planilhas de qualquer marketplace.
+Leitura genérica de planilhas de qualquer marketplace como ORIGEM.
 
 Complementa o reader.py (que lê planilhas Amazon) — este módulo lê
-planilhas dos outros marketplaces como ORIGEM, retornando um DataFrame
+planilhas dos outros marketplaces como FONTE, retornando um DataFrame
 padronizado com os nomes de coluna originais do marketplace.
 
 O pipeline detecta automaticamente se a origem é Amazon (usa reader.py)
@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import io
 import logging
-import zipfile
 import re
 from dataclasses import dataclass, field
 from typing import Optional
@@ -31,6 +30,7 @@ logger = logging.getLogger(__name__)
 #   sheet          — nome exato da aba (case-sensitive)
 #   sheet_prefix   — prefixo da aba (ex: Vendor usa "Modelo-")
 #   sheet_index    — posição da aba quando o nome varia (ex: Mercado Livre)
+#   sheet_candidates — lista de nomes candidatos em ordem de prioridade
 #   header_row     — linha do cabeçalho (1-indexed)
 #   data_start     — primeira linha de dados (1-indexed)
 #   skip_row_if    — lista de strings: pula linha se qualquer célula contiver
@@ -55,14 +55,23 @@ SOURCE_CONFIG: dict[str, dict] = {
     },
     "Vendor": {
         "sheet_prefix": "Modelo-",
-        "header_row": 6,   # linha 6 = cabeçalhos reais
-        "data_start": 9,   # linha 9 = dados reais (pula IDs internos e exemplo)
+        "header_row": 3,
+        "data_start": 7,   # começa na linha 7 (IDs internos e exemplo são filtrados abaixo)
+        "skip_row_if": ["#", ".value", "ABC123", "AMZN4", "OBRIGATÓRIO", "CONDICIONALMENTE"],
     },
     "Magalu": {
         "sheet": "PRODUTO",
         "header_row": 3,
         "data_start": 5,
         "skip_row_if": ["#", "[", "ABC123"],
+    },
+    # Amazon como origem usa reader.py (AmazonSheetReader),
+    # mas deixamos uma entrada aqui como fallback genérico caso necessário.
+    "Amazon": {
+        "sheet_candidates": ["Template", "Modelo"],
+        "header_row": 3,
+        "data_start": 5,
+        "skip_row_if": ["settings=", "reserved line", "templatetype=", "#", "["],
     },
 }
 
@@ -99,7 +108,10 @@ class MarketplaceSourceReader:
             return SourceReadResult(
                 df=pd.DataFrame(), marketplace=marketplace,
                 sheet_name="", total_rows=0, valid_rows=0,
-                errors=[f"Marketplace '{marketplace}' não configurado em SOURCE_CONFIG."],
+                errors=[
+                    f"Marketplace '{marketplace}' não configurado em SOURCE_CONFIG. "
+                    f"Disponíveis: {list(SOURCE_CONFIG.keys())}"
+                ],
             )
 
         warnings: list[str] = []
@@ -141,8 +153,8 @@ class MarketplaceSourceReader:
             )
 
         # ── 4. Extrair cabeçalhos e dados ─────────────────────────────────
-        header_idx  = config["header_row"] - 1   # converter para 0-based
-        data_idx    = config["data_start"] - 1
+        header_idx = config["header_row"] - 1   # converter para 0-based
+        data_idx   = config["data_start"] - 1
 
         if header_idx >= len(df_raw):
             return SourceReadResult(
@@ -226,6 +238,28 @@ class MarketplaceSourceReader:
                     warnings.append(f"Aba com prefixo '{prefix}' encontrada como '{s}'.")
                     return s
             return None
+
+        # Lista de candidatos (ex: Amazon com ["Template", "Modelo"])
+        if "sheet_candidates" in config:
+            candidates = config["sheet_candidates"]
+            # Exato
+            for cand in candidates:
+                if cand in sheets:
+                    return cand
+            # Case-insensitive
+            for cand in candidates:
+                for s in sheets:
+                    if cand.lower() in s.lower():
+                        warnings.append(f"Aba candidata '{cand}' encontrada como '{s}'.")
+                        return s
+            # Fallback: primeira aba que não seja instrução
+            _skip = {"instruções", "instrucoes", "instructions", "ajuda", "help",
+                     "dropdown", "conditions", "cover"}
+            for s in sheets:
+                if not any(sk in s.lower() for sk in _skip):
+                    warnings.append(f"Candidatos não encontrados; usando '{s}'.")
+                    return s
+            return sheets[0] if sheets else None
 
         # Nome exato
         if "sheet" in config:
