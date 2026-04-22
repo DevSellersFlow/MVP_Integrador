@@ -48,8 +48,8 @@ logging.basicConfig(
 
 # ─── Constantes ───────────────────────────────────────────────────────────────
 
-MARKETPLACES = ["Selecione o Marketplace", "Amazon", "Magalu", "Mercado Livre", "Shopee", "Temu", "Vendor"]
-SOURCE_MARKETPLACES = ["Selecione o Marketplace", "Amazon", "Magalu", "Mercado Livre", "Shopee", "Temu", "Vendor"]
+MARKETPLACES = ["Selecione o Marketplace", "Amazon", "Magalu", "Mercado Livre", "Shopee", "Temu", "Vendor", "Walmart"]
+SOURCE_MARKETPLACES = ["Selecione o Marketplace", "Amazon", "Magalu", "Mercado Livre", "Shopee", "Temu", "Vendor", "Walmart"]
 
 STRATEGY_LABELS = {
     "fixed+synonym": ("🟢 Fixo + Sinônimo", "green"),
@@ -85,6 +85,7 @@ _TEMPLATE_SIGNATURES: dict = {
     "Shopee":  lambda sheets: any(s.strip().lower() == "modelo" for s in sheets),
     "Temu":    lambda sheets: any(s.strip().lower() == "template" for s in sheets),
     "Vendor":  lambda sheets: any(s.strip().lower().startswith("modelo-") for s in sheets),
+    "Walmart":  lambda sheets: any(s.strip().lower().startswith("Product Content And Site Exp","Trade Item Configurations") for s in sheets),
 }
 
 
