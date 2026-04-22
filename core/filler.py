@@ -77,6 +77,12 @@ MARKETPLACE_CONFIG: dict[str, dict] = {
             "largura_pacote":     ("cm", "m"),
             "comprimento_pacote": ("cm", "m"),
         },
+      "Walmart": {
+        "sheet": "Product Content And Site Exp",
+        "sheet_candidates": ["Product Content And Site Exp", "Trade Item Configurations"],
+        "header_row": 4,
+        "data_start": 7,
+      },
     },
     "Amazon": {
         # Amazon como DESTINO: recebe dados de outros marketplaces.
@@ -427,6 +433,17 @@ class MarketplaceFiller:
         # Amazon como destino: tenta candidatos em ordem
         if marketplace == "Amazon":
             candidates = config.get("sheet_candidates", ["Template", "Modelo"])
+            for cand in candidates:
+                if cand in sheet_names:
+                    return cand
+            for cand in candidates:
+                for s in sheet_names:
+                    if cand.lower() in s.lower():
+                        return s
+            return sheet_names[0] if sheet_names else None
+
+        if marketplace == "Walmart":
+            candidates = config.get("sheet_candidates", ["Product Content And Site Exp", "Trade Item Configurations"])
             for cand in candidates:
                 if cand in sheet_names:
                     return cand
