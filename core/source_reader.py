@@ -47,6 +47,11 @@ SOURCE_CONFIG: dict[str, dict] = {
         "header_row": 3,
         "data_start": 7,
     },
+    "Walmart": {
+        "sheet": "Product Content And Site Exp",
+        "header_row": 4,
+        "data_start": 7,
+    },
     "Temu": {
         "sheet": "Template",
         "header_row": 2,
