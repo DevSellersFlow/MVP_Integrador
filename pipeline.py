@@ -11,6 +11,7 @@ Design:
   - Retorna PipelineResult com todos os artefatos e logs
   - Suporta modo "dry_run" (mapeia mas não grava arquivo)
   - Suporta enriquecimento por IA (opt-in)
+  - Suporta qualquer marketplace como ORIGEM (não apenas Amazon)
 """
 
 from __future__ import annotations
@@ -77,9 +78,10 @@ class SellersFlowPipeline:
     Uso típico:
         pipeline = SellersFlowPipeline()
         result = pipeline.run(
-            amazon_file=bytes_io_amazon,
+            amazon_file=bytes_io_origem,
             template_file=bytes_io_template,
-            marketplace="Shopee",
+            marketplace="Shopee",           # marketplace DESTINO
+            source_marketplace="Amazon",    # marketplace ORIGEM (default)
             use_ai=True,
         )
         if result.success:
@@ -114,14 +116,13 @@ class SellersFlowPipeline:
         Executa o pipeline completo.
 
         Args:
-            amazon_file: BytesIO da planilha de ORIGEM (Amazon ou outro marketplace).
-            template_file: BytesIO do template do marketplace DESTINO.
-            marketplace: Marketplace DESTINO ("Shopee", "Temu", "Vendor", "Amazon"...).
-            use_ai: Se True, usa IA como fallback de mapeamento.
-            enrich_ai: Se True, aplica enriquecimento de conteúdo via IA.
-            dry_run: Se True, não grava arquivo de saída.
-            source_marketplace: Marketplace de ORIGEM dos dados (default "Amazon").
-                Quando diferente de "Amazon", usa MarketplaceSourceReader.
+            amazon_file:        BytesIO da planilha de ORIGEM.
+            template_file:      BytesIO do template do marketplace DESTINO.
+            marketplace:        Marketplace DESTINO ("Shopee", "Temu", "Amazon"...).
+            use_ai:             Se True, usa IA como fallback de mapeamento.
+            enrich_ai:          Se True, aplica enriquecimento de conteúdo via IA.
+            dry_run:            Se True, não grava arquivo de saída.
+            source_marketplace: Marketplace ORIGEM dos dados (default "Amazon").
 
         Returns:
             PipelineResult completo.
@@ -129,7 +130,7 @@ class SellersFlowPipeline:
         t0 = time.perf_counter()
         result = PipelineResult(marketplace=marketplace, elapsed_seconds=0.0)
 
-        # ── Etapa 1: Leitura da planilha de origem ───────────────────────
+        # ── Etapa 1: Leitura da planilha de origem ────────────────────────
         logger.info("[Pipeline] Lendo origem '%s'...", source_marketplace)
 
         if source_marketplace == "Amazon":
@@ -143,9 +144,8 @@ class SellersFlowPipeline:
             amazon_df = read_result.df
         else:
             src_result = self._source_reader.read(amazon_file, source_marketplace)
-            # Adapta SourceReadResult para o campo read_result esperado pelo PipelineResult
-            from core.reader import AmazonReadResult as _AR
-            result.read_result = _AR(
+            # Adapta SourceReadResult para o campo read_result esperado
+            result.read_result = AmazonReadResult(
                 df=src_result.df,
                 language="BR",
                 sheet_name=src_result.sheet_name,
@@ -161,6 +161,9 @@ class SellersFlowPipeline:
             result.warnings.extend(src_result.warnings)
             # Normaliza colunas para chaves semânticas
             amazon_df = self._mapper.normalize_source_df(src_result.df, source_marketplace)
+            # Atualiza read_result.df para que source_col bata com df.columns
+            # no preview e no filler
+            result.read_result.df = amazon_df
             logger.info(
                 "[Pipeline] Origem '%s' normalizada: %d colunas semânticas",
                 source_marketplace, len(amazon_df.columns),
@@ -174,8 +177,7 @@ class SellersFlowPipeline:
         # ── Etapa 3: Obter cabeçalhos do template ─────────────────────────
         _template_ext = None
         if hasattr(template_file, "name") and template_file.name:
-            from pathlib import Path as _P
-            _template_ext = _P(template_file.name).suffix.lower() or None
+            _template_ext = Path(template_file.name).suffix.lower() or None
         if hasattr(template_file, "seek"):
             template_file.seek(0)
             _template_bytes = template_file.read()
@@ -239,10 +241,8 @@ class SellersFlowPipeline:
     ) -> Optional[dict[int, str]]:
         import os
         import tempfile
-        import io as _io
         from openpyxl import load_workbook
 
-        # ── Todos os marketplaces: usa MARKETPLACE_CONFIG (posição fixa) ──
         _INLINE_CONFIG: dict[str, dict] = {
             "Mercado Livre": {"sheet_index_after_ajuda": True, "header_row": 3},
         }
@@ -275,6 +275,24 @@ class SellersFlowPipeline:
                     (wb[s] for s in wb.sheetnames if s.startswith(prefix)),
                     wb.active,
                 )
+            elif marketplace == "Amazon":
+                # Amazon como destino: tenta candidatos em ordem
+                candidates = config.get("sheet_candidates", ["Template", "Modelo"])
+                ws = None
+                for cand in candidates:
+                    if cand in wb.sheetnames:
+                        ws = wb[cand]
+                        break
+                if ws is None:
+                    for cand in candidates:
+                        for sn in wb.sheetnames:
+                            if cand.lower() in sn.lower():
+                                ws = wb[sn]
+                                break
+                        if ws:
+                            break
+                if ws is None:
+                    ws = wb.active
             elif config.get("sheet_index_after_ajuda"):
                 if len(wb.sheetnames) >= 3:
                     ws = wb[wb.sheetnames[2]]
@@ -282,10 +300,8 @@ class SellersFlowPipeline:
                     ws = wb[wb.sheetnames[-1]]
             else:
                 sheet = config.get("sheet", "")
-                # sheet_candidates (ex: Amazon com ["Template","Modelo"])
                 if not sheet:
                     candidates = config.get("sheet_candidates", [])
-                    # Tenta cada candidato exato, depois case-insensitive
                     sheet = next((s for s in candidates if s in wb.sheetnames), "")
                     if not sheet:
                         for cand in candidates:
@@ -295,7 +311,6 @@ class SellersFlowPipeline:
                                     break
                             if sheet:
                                 break
-                    # Fallback: primeira aba que não seja instrução
                     if not sheet:
                         _skip = {"instruções","instrucoes","instructions","ajuda","help","dropdown","conditions","cover"}
                         sheet = next(
@@ -314,7 +329,10 @@ class SellersFlowPipeline:
             return headers
 
         except Exception as exc:
-            logger.error("Erro ao ler cabeçalhos do template '%s': %s", marketplace, exc, exc_info=True)
+            logger.error(
+                "Erro ao ler cabeçalhos do template '%s': %s", marketplace, exc,
+                exc_info=True,
+            )
             return None
         finally:
             if tmp_path:
@@ -332,16 +350,16 @@ class SellersFlowPipeline:
             row_dict = row.dropna().to_dict()
             enrich = self._ai.enrich_row(row_dict, marketplace)
             if enrich:
-                # Sobrescreve campos enriquecidos
                 for col_alias, field_key in [
                     ("item name", "title"),
                     ("nome do produto", "title"),
+                    ("nome_produto", "title"),
                     ("product description", "description"),
                     ("descrição do produto", "description"),
+                    ("descricao", "description"),
                 ]:
                     if col_alias in row.index and field_key in enrich:
                         row[col_alias] = enrich[field_key]
-                # Bullet points → colunas existentes
                 bullets = enrich.get("bullets", [])
                 for i, bullet in enumerate(bullets[:5], start=1):
                     col_bp = f"bullet point{i}" if i > 1 else "bullet point"

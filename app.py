@@ -49,7 +49,7 @@ logging.basicConfig(
 # ─── Constantes ───────────────────────────────────────────────────────────────
 
 MARKETPLACES = ["Selecione o Marketplace", "Amazon", "Magalu", "Mercado Livre", "Shopee", "Temu", "Vendor"]
-SOURCE_MARKETPLACES = ["Selecione o Marketplace", "Amazon", "Magalu", "Mercado Livre", "Shopee", "Temu", "Vendor"]
+SOURCE_MARKETPLACES = ["Amazon", "Magalu", "Mercado Livre", "Shopee", "Temu", "Vendor"]
 
 STRATEGY_LABELS = {
     "fixed+synonym": ("🟢 Fixo + Sinônimo", "green"),
@@ -468,6 +468,7 @@ def _init_state():
     defaults = {
         "pipeline_result": None,
         "last_marketplace": None,
+        "last_source_mp": "Amazon",  # marketplace de origem da última execução
         "corrections": {},      # dest_col → source_col (aprendizado)
         "session_output_dir": None,  # pasta exclusiva desta sessão
     }
@@ -571,12 +572,13 @@ with st.sidebar:
 if run_btn and amazon_file and dest_file:
     with st.spinner("Processando..."):
         pipeline = SellersFlowPipeline(output_dir=_SESSION_DIR)
-        progress = st.progress(0, text="Lendo planilha Amazon...")
+        _src_label_run = source_marketplace
+        progress = st.progress(0, text=f"Lendo planilha {_src_label_run}...")
 
         # Simula progresso por etapas
         import time
 
-        progress.progress(20, text="Lendo planilha Amazon...")
+        progress.progress(20, text=f"Lendo planilha {_src_label_run}...")
         time.sleep(0.1)
 
         # Limpar arquivos gerados anteriormente nesta sessão
@@ -605,6 +607,7 @@ if run_btn and amazon_file and dest_file:
 
         st.session_state.pipeline_result = result
         st.session_state.last_marketplace = marketplace
+        st.session_state.last_source_mp = source_marketplace
 
 
 # ─── Main content ─────────────────────────────────────────────────────────────
@@ -644,7 +647,8 @@ else:
 
         col1, col2, col3, col4 = st.columns(4)
         with col1:
-            st.metric("📋 Linhas Amazon", rr.valid_rows)
+            _src_name = st.session_state.get("last_source_mp", "Origem")
+            st.metric(f"📋 Linhas {_src_name}", rr.valid_rows)
         with col2:
             st.metric("🗺 Cobertura", f"{mr.coverage:.0%}")
         with col3:
@@ -708,7 +712,7 @@ else:
             <div class="map-row" style="border-bottom:1px solid #333; font-weight:600; color:#888; font-size:0.75rem; text-transform:uppercase;">
                 <div class="map-col">Coluna Destino</div>
                 <div class="map-arrow">→</div>
-                <div class="map-col">Coluna Amazon</div>
+                <div class="map-col">Coluna Origem</div>
                 <div class="map-col">Estratégia</div>
                 <div class="map-col">Confiança</div>
                 <div class="map-col">Notas</div>
@@ -754,7 +758,7 @@ else:
                     if st.button("💾 Salvar", key="learn_save"):
                         pipeline = SellersFlowPipeline()
                         pipeline.learn_mapping(
-                            st.session_state.last_marketplace or marketplace,
+                            st.session_state.get("last_marketplace") or marketplace,
                             sel_dest,
                             sel_source,
                         )
@@ -768,7 +772,8 @@ else:
             col_left, col_right = st.columns(2)
 
             with col_left:
-                st.markdown("### 📥 Dados Amazon")
+                _src_label = st.session_state.get("last_source_mp", "Origem")
+                st.markdown(f"### 📥 Dados {_src_label}")
                 st.caption(f"{len(df)} linhas · {len(df.columns)} colunas · idioma: {result.read_result.language}")
                 # Mostra apenas colunas mapeadas + primeiros N
                 if result.mapping_result:
