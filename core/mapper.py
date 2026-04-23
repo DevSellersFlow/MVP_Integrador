@@ -203,8 +203,6 @@ MARKETPLACE_MAPPINGS: dict[str, dict[str, list[str]]] = {
         "país de origem": ["pais_origem"],
         "preço": ["preco"],
         "estoque": ["quantidade"],
-        "product type":        ["tipo_produto"],
-"item type keyword":   ["tipo_produto"],
     },
     "Magalu": {
         "SKU":             ["sku"],
@@ -229,7 +227,7 @@ MARKETPLACE_MAPPINGS: dict[str, dict[str, list[str]]] = {
         "Height (in)":       ["altura_pacote"],
         "Width (in)":        ["largura_pacote"],
         "Depth (in)":        ["comprimento_pacote"],
-        "Selling Price":     ["preco"], 
+        "Selling Price":     ["preco"],
     },
 }
 
@@ -386,10 +384,10 @@ SOURCE_MAPPINGS: dict[str, dict[str, str]] = {
         "Height (in)": "altura_pacote",
         "Width (in)": "largura_pacote",
         "Depth (in)": "comprimento_pacote",
-        "Selling Price": "preco", 
-        "Product Type":    ["tipo_produto"],
-"Item Type":       ["tipo_produto"],
-"Product Category":["tipo_produto"],
+        "Selling Price": "preco",
+        "Product Type":     "tipo_produto",
+        "Item Type":        "tipo_produto",
+        "Product Category": "tipo_produto",
     },
 }
 
