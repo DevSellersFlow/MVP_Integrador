@@ -753,7 +753,7 @@ else:
                 with col_a:
                     sel_dest = st.selectbox("Campo destino", dest_options, key="learn_dest")
                 with col_b:
-                    sel_source = st.selectbox("Coluna Amazon correta", source_options, key="learn_src")
+                    sel_source = st.selectbox("Coluna correta", source_options, key="learn_src")
                 with col_c:
                     st.markdown("<br>", unsafe_allow_html=True)
                     if st.button("💾 Salvar", key="learn_save"):
