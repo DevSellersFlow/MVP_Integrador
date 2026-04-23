@@ -49,7 +49,7 @@ logging.basicConfig(
 # ─── Constantes ───────────────────────────────────────────────────────────────
 
 MARKETPLACES = ["Selecione o Marketplace", "Amazon", "Magalu", "Mercado Livre", "Shopee", "Temu", "Vendor", "Walmart"]
-SOURCE_MARKETPLACES = ["Selecione o Marketplace", "Amazon", "Magalu", "Mercado Livre", "Shopee", "Temu", "Vendor", "Walmart"]
+SOURCE_MARKETPLACES = ["Amazon", "Magalu", "Mercado Livre", "Shopee", "Temu", "Vendor", "Walmart"]
 
 STRATEGY_LABELS = {
     "fixed+synonym": ("🟢 Fixo + Sinônimo", "green"),
