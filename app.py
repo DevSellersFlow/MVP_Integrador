@@ -711,9 +711,9 @@ else:
             # Header da tabela
             st.markdown("""
             <div class="map-row" style="border-bottom:1px solid #333; font-weight:600; color:#888; font-size:0.75rem; text-transform:uppercase;">
-                <div class="map-col">Coluna Destino</div>
-                <div class="map-arrow">→</div>
                 <div class="map-col">Coluna Origem</div>
+                <div class="map-arrow">→</div>
+                <div class="map-col">Coluna Destino</div>
                 <div class="map-col">Estratégia</div>
                 <div class="map-col">Confiança</div>
                 <div class="map-col">Notas</div>
@@ -728,9 +728,9 @@ else:
 
                 st.markdown(f"""
                 <div class="map-row">
-                    <div class="map-col" style="color:#c0c0e0"><strong>{d.dest_col}</strong></div>
+                    <div class="map-col" style="color:#c0c0e0"><strong>{source_display}</strong></div>
                     <div class="map-arrow">→</div>
-                    <div class="map-col" style="color:#8080a0">{source_display}</div>
+                    <div class="map-col" style="color:#8080a0">{d.dest_col}</div>
                     <div class="map-col"><span class="{badge_class}">{label}</span></div>
                     <div class="map-col">{conf_icon} {d.confidence:.0%}</div>
                     <div class="map-col" style="color:#555;font-size:0.75rem">{d.notes}</div>
