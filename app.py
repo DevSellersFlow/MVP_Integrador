@@ -494,6 +494,33 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
+# ─── Fix sidebar toggle (JS injection) ─────────────────────────────────────
+import streamlit.components.v1 as _stc
+_stc.html("""
+<script>
+(function() {
+  function fixSidebarBtn() {
+    var selectors = [
+      '[data-testid="stSidebarCollapsedControl"]',
+      '[data-testid="stSidebarCollapseButton"]',
+    ];
+    selectors.forEach(function(sel) {
+      window.parent.document.querySelectorAll(sel).forEach(function(el) {
+        el.style.setProperty('display', 'flex', 'important');
+        el.style.setProperty('visibility', 'visible', 'important');
+        el.style.setProperty('opacity', '1', 'important');
+        el.style.setProperty('pointer-events', 'auto', 'important');
+      });
+    });
+  }
+  fixSidebarBtn();
+  var count = 0;
+  var iv = setInterval(function() { fixSidebarBtn(); if(++count>=10) clearInterval(iv); }, 500);
+  new MutationObserver(fixSidebarBtn).observe(window.parent.document.body, {childList:true, subtree:true});
+})();
+</script>
+""", height=0)
+
 # ─── Estado da sessão ─────────────────────────────────────────────────────────
 
 def _init_state():
