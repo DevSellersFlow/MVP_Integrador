@@ -49,7 +49,7 @@ logging.basicConfig(
 # ─── Constantes ───────────────────────────────────────────────────────────────
 
 MARKETPLACES = ["Selecione o Marketplace", "Amazon", "Magalu", "Mercado Livre", "Shopee", "Temu", "Vendor", "Walmart"]
-SOURCE_MARKETPLACES = ["Selecione o Marketplace", "Amazon", "Magalu", "Mercado Livre", "Shopee", "Temu", "Vendor", "Walmart"]
+SOURCE_MARKETPLACES = ["Amazon", "Magalu", "Mercado Livre", "Shopee", "Temu", "Vendor", "Walmart"]
 
 STRATEGY_LABELS = {
     "fixed+synonym": ("🟢 Fixo + Sinônimo", "green"),
@@ -159,6 +159,37 @@ st.markdown("""
         --text-sec:     #8BA5C4;
         --text-muted:   #4A6480;
         --text-acc:     #5FC7F4;
+    }
+
+    /* ── 0. Botão toggle da sidebar — sempre visível ── */
+    /* Botão de expandir (quando sidebar está colapsada) */
+    button[data-testid="stSidebarCollapsedControl"],
+    [data-testid="stSidebarCollapsedControl"] {
+        display: flex !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+        position: fixed !important;
+        top: 1rem !important;
+        left: 0.5rem !important;
+        z-index: 99999 !important;
+        background: var(--bg-raised, #101E30) !important;
+        border: 1px solid rgba(0,140,255,0.4) !important;
+        border-radius: 6px !important;
+        padding: 4px 8px !important;
+        cursor: pointer !important;
+        color: #5FC7F4 !important;
+    }
+    button[data-testid="stSidebarCollapsedControl"]:hover {
+        background: rgba(0,140,255,0.15) !important;
+        border-color: rgba(0,140,255,0.7) !important;
+    }
+
+    /* Botão de colapsar (dentro da sidebar aberta) */
+    button[data-testid="stSidebarCollapseButton"],
+    [data-testid="stSidebarCollapseButton"] {
+        display: flex !important;
+        visibility: visible !important;
+        opacity: 1 !important;
     }
 
     /* ── 1. Remover barra branca do topo ── */
@@ -711,9 +742,9 @@ else:
             # Header da tabela
             st.markdown("""
             <div class="map-row" style="border-bottom:1px solid #333; font-weight:600; color:#888; font-size:0.75rem; text-transform:uppercase;">
-                <div class="map-col">Coluna Origem</div>
-                <div class="map-arrow">→</div>
                 <div class="map-col">Coluna Destino</div>
+                <div class="map-arrow">→</div>
+                <div class="map-col">Coluna Origem</div>
                 <div class="map-col">Estratégia</div>
                 <div class="map-col">Confiança</div>
                 <div class="map-col">Notas</div>
@@ -728,9 +759,9 @@ else:
 
                 st.markdown(f"""
                 <div class="map-row">
-                    <div class="map-col" style="color:#c0c0e0"><strong>{source_display}</strong></div>
+                    <div class="map-col" style="color:#c0c0e0"><strong>{d.dest_col}</strong></div>
                     <div class="map-arrow">→</div>
-                    <div class="map-col" style="color:#8080a0">{d.dest_col}</div>
+                    <div class="map-col" style="color:#8080a0">{source_display}</div>
                     <div class="map-col"><span class="{badge_class}">{label}</span></div>
                     <div class="map-col">{conf_icon} {d.confidence:.0%}</div>
                     <div class="map-col" style="color:#555;font-size:0.75rem">{d.notes}</div>
@@ -753,7 +784,7 @@ else:
                 with col_a:
                     sel_dest = st.selectbox("Campo destino", dest_options, key="learn_dest")
                 with col_b:
-                    sel_source = st.selectbox("Coluna correta", source_options, key="learn_src")
+                    sel_source = st.selectbox("Coluna Amazon correta", source_options, key="learn_src")
                 with col_c:
                     st.markdown("<br>", unsafe_allow_html=True)
                     if st.button("💾 Salvar", key="learn_save"):
