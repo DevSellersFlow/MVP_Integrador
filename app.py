@@ -161,37 +161,6 @@ st.markdown("""
         --text-acc:     #5FC7F4;
     }
 
-    /* ── 0. Botão toggle da sidebar — sempre visível ── */
-    /* Botão de expandir (quando sidebar está colapsada) */
-    button[data-testid="stSidebarCollapsedControl"],
-    [data-testid="stSidebarCollapsedControl"] {
-        display: flex !important;
-        visibility: visible !important;
-        opacity: 1 !important;
-        position: fixed !important;
-        top: 1rem !important;
-        left: 0.5rem !important;
-        z-index: 99999 !important;
-        background: var(--bg-raised, #101E30) !important;
-        border: 1px solid rgba(0,140,255,0.4) !important;
-        border-radius: 6px !important;
-        padding: 4px 8px !important;
-        cursor: pointer !important;
-        color: #5FC7F4 !important;
-    }
-    button[data-testid="stSidebarCollapsedControl"]:hover {
-        background: rgba(0,140,255,0.15) !important;
-        border-color: rgba(0,140,255,0.7) !important;
-    }
-
-    /* Botão de colapsar (dentro da sidebar aberta) */
-    button[data-testid="stSidebarCollapseButton"],
-    [data-testid="stSidebarCollapseButton"] {
-        display: flex !important;
-        visibility: visible !important;
-        opacity: 1 !important;
-    }
-
     /* ── 1. Remover barra branca do topo ── */
     header[data-testid="stHeader"] {
         background: transparent !important;
@@ -200,7 +169,8 @@ st.markdown("""
         min-height: 0 !important;
         padding: 0 !important;
     }
-    #MainMenu, footer, header { visibility: hidden; }
+    #MainMenu, footer { visibility: hidden; }
+    header[data-testid="stHeader"] { display: none !important; }
     .stDeployButton { display: none; }
 
     /* ── Base ── */
@@ -496,30 +466,7 @@ st.markdown("""
 
 # ─── Fix sidebar toggle (JS injection) ─────────────────────────────────────
 import streamlit.components.v1 as _stc
-_stc.html("""
-<script>
-(function() {
-  function fixSidebarBtn() {
-    var selectors = [
-      '[data-testid="stSidebarCollapsedControl"]',
-      '[data-testid="stSidebarCollapseButton"]',
-    ];
-    selectors.forEach(function(sel) {
-      window.parent.document.querySelectorAll(sel).forEach(function(el) {
-        el.style.setProperty('display', 'flex', 'important');
-        el.style.setProperty('visibility', 'visible', 'important');
-        el.style.setProperty('opacity', '1', 'important');
-        el.style.setProperty('pointer-events', 'auto', 'important');
-      });
-    });
-  }
-  fixSidebarBtn();
-  var count = 0;
-  var iv = setInterval(function() { fixSidebarBtn(); if(++count>=10) clearInterval(iv); }, 500);
-  new MutationObserver(fixSidebarBtn).observe(window.parent.document.body, {childList:true, subtree:true});
-})();
-</script>
-""", height=0)
+_stc.html("", height=0)  # placeholder
 
 # ─── Estado da sessão ─────────────────────────────────────────────────────────
 
