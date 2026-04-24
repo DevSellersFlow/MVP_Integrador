@@ -201,7 +201,7 @@ MARKETPLACE_MAPPINGS: dict[str, dict[str, list[str]]] = {
         "altura do pacote": ["altura_pacote"],
         "código ncm": ["ncm"],
         "país de origem": ["pais_origem"],
-        "preço": ["preco"],
+        "Preço sugerido com impostos": ["preco"],
         "estoque": ["quantidade"],
     },
     "Magalu": {
