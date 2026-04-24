@@ -201,7 +201,7 @@ MARKETPLACE_MAPPINGS: dict[str, dict[str, list[str]]] = {
         "altura do pacote": ["altura_pacote"],
         "código ncm": ["ncm"],
         "país de origem": ["pais_origem"],
-        "Preço sugerido com impostos": ["preco"],
+        "preço": ["preco"],
         "estoque": ["quantidade"],
     },
     "Magalu": {
@@ -264,6 +264,7 @@ SOURCE_MAPPINGS: dict[str, dict[str, str]] = {
         "external product id": "id_produto",
         "external product id type": "tipo_id_produto",
         "country of origin": "pais_origem",
+        "your price usd (sell on amazon, us)": "preco",
         # PT-BR
         "nome do produto": "nome_produto",
         "sku do vendedor": "sku",
@@ -281,6 +282,7 @@ SOURCE_MAPPINGS: dict[str, dict[str, str]] = {
         "estoque": "quantidade",
         "your price usd (sell on amazon, us)": "preco",
         "quantity (us)": "quantidade",
+        "preço sugerido com impostos": "preco",
     },
     "Mercado Livre": {
         "titulo": "nome_produto",
